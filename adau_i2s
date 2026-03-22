@@ -1,0 +1,184 @@
+----------------------------------------------------------------------------------
+-- Company: 
+-- Engineer: 
+-- 
+-- Create Date: 22.03.2026 13:42:47
+-- Design Name: 
+-- Module Name: read_data_adc - Behavioral
+-- Project Name: 
+-- Target Devices: 
+-- Tool Versions: 
+-- Description: 
+-- 
+-- Dependencies: 
+-- 
+-- Revision:
+-- Revision 0.01 - File Created
+-- Additional Comments:
+-- 
+----------------------------------------------------------------------------------
+
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if using
+-- arithmetic functions with Signed or Unsigned values
+--use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx leaf cells in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
+entity read_data_adc is
+
+  Generic(
+        DATA_WIDTH             : integer    := 24;
+        FRAME_WIDTH            : integer    := 32
+        );
+        
+  Port (
+        -- Input
+        reset    :   in std_logic;
+        clk      :   in std_logic;  -- xung 98Mhz
+        lrclk    :   in std_logic;
+        sdata    :   in std_logic;
+        
+        --bclk_o  : out std_logic; -- Thêm dòng này ?? quan sát
+        
+        -- Output
+        data_o  :   out std_logic_vector(DATA_WIDTH - 1 downto 0)
+        
+         );
+end read_data_adc;
+
+architecture Behavioral of read_data_adc is
+
+     type state_type is (IDLE,  READ);   -- 2 tr?ng thái c?a máy FSM --
+     
+     signal state_reg, state_next           : state_type;
+     signal bit_count_reg, bit_count_next   : unsigned(5 downto 0); -- b? ??m d?ch bit SPI
+     signal bclk_count_reg, bclk_count_next : unsigned(4 downto 0); -- b? ??m chia xung sck
+     signal bclk_reg, bclk_next             : std_logic;
+
+     signal shift_reg, shift_reg_next       : std_logic_vector( DATA_WIDTH  -1  downto 0);  -- thanh ghi l?u data
+     signal d_out_reg, d_out_next           : std_logic_vector( DATA_WIDTH - 1 downto 0);               -- thanh ghi l?u data (12 bits) các m?u ?ã ???c s? hoá t? ADC
+  
+     signal rx_done_reg, rx_done_next       : std_logic;  -- c? báo ?ã truy?n xong 1 m?u ADC
+     signal busy_reg, busy_next             : std_logic;  -- c? báo ADC b?n
+
+
+
+begin
+ 
+     -- Ti?n trình ho?t ??ng c?a h? th?ng --
+process(clk, reset)
+begin
+    if (reset = '0') then
+    -- Reset t?t c? các thanh ghi
+        state_reg <= IDLE;      
+        bit_count_reg <= (others => '0');
+        bclk_count_reg <= (others => '0');
+        shift_reg <= (others => '0');
+        bclk_reg <= '1';              
+        rx_done_reg <= '0';
+        busy_reg  <= '0';     
+        d_out_reg <= (others => '0');
+        
+    elsif rising_edge(clk) then
+    -- C?p nh?t các thanh ghi
+        state_reg <= state_next;        
+        bit_count_reg <= bit_count_next;
+        bclk_count_reg <= bclk_count_next;       
+        shift_reg <= shift_reg_next;  
+        bclk_reg <= bclk_next;             
+        rx_done_reg <= rx_done_next;
+        busy_reg <= busy_next;
+        d_out_reg <= d_out_next;
+        
+    end if;
+end process;
+
+process(     state_reg,
+             lrclk,     
+             bit_count_reg,      
+             bclk_count_reg,
+             shift_reg, 
+             bclk_reg,                         
+             d_out_reg,                            
+             busy_reg,
+             rx_done_reg       )
+begin 
+
+  -- Kh?i t?o các giá tr? ban ??u
+  
+    state_next        <=  state_reg;   
+    bit_count_next    <=  bit_count_reg;
+    bclk_count_next   <=  bclk_count_reg;   
+    shift_reg_next    <= shift_reg;      -- sdi
+    d_out_next        <= d_out_reg;   
+    busy_next         <= busy_reg;
+    rx_done_next      <= '0';            -- ban ??u ch?a b?n
+    
+    
+    -- Máy tr?ng thái 
+    case state_reg is
+        -------------- IDLE ------------------
+        when IDLE =>
+            busy_next      <= '0';             -- Ch?a báo b?n
+            bclk_count_next <= (others => '0'); -- Reset b? ??m xung SCk
+            bit_count_next <= (others => '0'); -- Reset b? ??m bit
+            if lrclk = '0' then
+                state_next <= READ;            -- Chuy?n tr?ng thái sang LOAD
+                busy_next  <= '1';              -- Báo b?n
+            end if;
+        --------------------------------------------------------------------------------------------
+        
+       
+        
+        -----------READ ------------------------------------------------------------------------    
+        when READ => 
+            bclk_count_next <= bclk_count_reg + 1; -- m?i xung clk l?i t?ng sck_count lên 1
+            -- Cách chia xung sck 1MHz --
+            case bclk_count_reg is
+                when "00000" =>        -- (0) b?t ??u 1 chu k? bclk
+                    bclk_next <= '0';
+                    
+                when "01000" =>        -- (8) ??n gi?a chu k? bclk
+                    bclk_next <= '1';  -- bclk ??i tr?ng thái t? 0 lên 1 khi ??n gi?a chu k? ( doc data tai c?nh lên c?a bclk)     
+                    
+                    -- B? qua bit ??u tiên (bit_count = 0), nh?n 24 bit sau
+                        if bit_count_reg > 0 and bit_count_reg <= DATA_WIDTH then
+                            shift_reg_next <= shift_reg(DATA_WIDTH-2 downto 0) & sdata;
+                        end if;
+                        
+                        bit_count_next <= bit_count_reg + 1;
+                   
+                                
+                when "01111" =>        -- (16) k?t thúc m?t chu k?
+                    bclk_next <= '0';  -- sck ??i tr?ng thái t? 1 xu?ng 0 khi k?t thúc 1 chu k?  
+                    bclk_count_next <= (others => '0');              -- reset b? ??m xung sck
+                    
+                    if (bit_count_reg = FRAME_WIDTH) or (lrclk = '1') then
+                        d_out_next <= shift_reg(DATA_WIDTH-1 downto 0); -- Ch?t d? li?u ra
+                        state_next <= IDLE;      -- ??i lrclk ??o tr?ng thái
+                    else
+                        null;
+                    end if;
+                        
+                when others  => 
+                    null;
+                    
+             end case;
+             
+           end case;
+           
+       end process;
+       
+    data_o <= d_out_reg;
+    --bclk_o <= bclk_reg;
+
+
+end Behavioral;
