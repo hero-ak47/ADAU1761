@@ -155,6 +155,12 @@ void init_adau1761()
 
     for (i=0; i<1000000; i++);
 
+    // CẤU HÌNH TỐC ĐỘ LẤY MẪU 96 kHz TẠI ĐÂY
+        // ==========================================
+    write_adau1761(0x4017, 0x06, 1); // ADC/DAC = 96 kHz (fs/0.5)
+    write_adau1761(0x40EB, 0x00, 1); // DSP Core = 96 kHz
+    write_adau1761(0x40F8, 0x06, 1); // Serial Port = 96 kHz
+
     write_adau1761(0x4015,0x01,1);
 
     write_adau1761(0x400a,0x01,1);
