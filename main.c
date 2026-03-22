@@ -160,6 +160,8 @@ void init_adau1761()
     write_adau1761(0x4017, 0x06, 1); // ADC/DAC = 96 kHz (fs/0.5)
     write_adau1761(0x40EB, 0x00, 1); // DSP Core = 96 kHz
     write_adau1761(0x40F8, 0x06, 1); // Serial Port = 96 kHz
+    // Cấu hình 96kHz, 24-bit, I2S (Trễ 1 BCLK mặc định)
+    write_adau1761(0x4016, 0x00, 1); // LRDEL = 00 (trễ 1 BCLK), MSB first
 
     write_adau1761(0x4015,0x01,1);
 
