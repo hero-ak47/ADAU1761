@@ -1,0 +1,159 @@
+----------------------------------------------------------------------------------
+-- Company: 
+-- Engineer: 
+-- 
+-- Create Date: 22.03.2026 13:42:47
+-- Design Name: 
+-- Module Name: read_data_adc - Behavioral
+-- Project Name: 
+-- Target Devices: 
+-- Tool Versions: 
+-- Description: 
+-- 
+-- Dependencies: 
+-- 
+-- Revision:
+-- Revision 0.01 - File Created
+-- Additional Comments:
+-- 
+----------------------------------------------------------------------------------
+
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if using
+-- arithmetic functions with Signed or Unsigned values
+--use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx leaf cells in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
+entity read_data_adc is
+
+  Generic(
+        DATA_WIDTH             : integer    := 24;
+        FRAME_WIDTH            : integer    := 32
+        );
+        
+  Port (
+        -- Input
+        reset    :   in std_logic;
+        clk      :   in std_logic;  -- xung 98Mhz
+        lrclk    :   in std_logic;
+        data_in    :   in std_logic_vector(DATA_WIDTH - 1 downto 0);
+        
+        --bclk_o  : out std_logic; -- Thêm dòng này ?? quan sát
+        
+        -- Output
+        Sdata  :   out std_logic
+        
+         );
+end read_data_adc;
+
+
+
+architecture Behavioral of read_data_adc is
+    type state_type is (IDLE, WRITE);
+    signal state_reg, state_next : state_type;
+    
+    signal bit_count_reg, bit_count_next   : unsigned(5 downto 0);
+    signal bclk_count_reg, bclk_count_next : unsigned(4 downto 0);
+    signal bclk_reg, bclk_next             : std_logic;
+
+    signal shift_reg, shift_reg_next       : std_logic_vector(DATA_WIDTH downto 0);
+    signal sdata_reg, sdata_next           : std_logic;
+    
+    -- Tín hiệu để bắt cạnh lrclk
+    signal lrclk_delay : std_logic;
+    signal lrclk_edge  : std_logic;
+
+begin
+
+    -- Chốt cạnh xuống lrclk
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            lrclk_delay <= lrclk;
+        end if;
+    end process;
+    lrclk_edge <= '1' when (lrclk_delay = '1' and lrclk = '0') else '0';
+
+    -- Process đồng bộ
+    process(clk, reset)
+    begin
+        if (reset = '0') then
+            state_reg <= IDLE;
+            bit_count_reg <= (others => '0');
+            bclk_count_reg <= (others => '0');
+            shift_reg <= (others => '0');
+            sdata_reg <= '0';
+            bclk_reg <= '1';
+        elsif rising_edge(clk) then
+            state_reg <= state_next;
+            bit_count_reg <= bit_count_next;
+            bclk_count_reg <= bclk_count_next;
+            shift_reg <= shift_reg_next;
+            sdata_reg <= sdata_next;
+            bclk_reg <= bclk_next;
+        end if;
+    end process;
+
+    -- Process tổ hợp
+    process(state_reg, lrclk_edge, bit_count_reg, bclk_count_reg, shift_reg, sdata_reg, bclk_reg, data_in)
+    begin
+        -- Giá trị mặc định
+        state_next <= state_reg;
+        bit_count_next <= bit_count_reg;
+        bclk_count_next <= bclk_count_reg;
+        shift_reg_next <= shift_reg;
+        sdata_next <= sdata_reg;
+        bclk_next <= bclk_reg;
+
+        case state_reg is
+            when IDLE =>
+                bit_count_next <= (others => '0');
+                bclk_count_next <= (others => '0');
+                bclk_next <= '1'; -- I2S Idle thường để BCLK cao hoặc thấp tùy chip
+                
+                -- Chỉ bắt đầu khi có CẠNH XUỐNG của lrclk
+                if lrclk_edge = '1' then
+                    shift_reg_next <= '0' & data_in; -- Nạp 25 bit
+                    state_next <= WRITE;
+                end if;
+
+            when WRITE =>
+                bclk_count_next <= bclk_count_reg + 1; -- Đếm từ 0-31 (cho 98.304MHz)
+
+                case to_integer(bclk_count_reg) is
+                    when 0 =>
+                        bclk_next <= '0';
+                        -- Đẩy bit hiện tại ra chân Sdata ngay khi BCLK xuống
+                        sdata_next <= shift_reg(DATA_WIDTH); 
+                        
+                    when 16 =>
+                        bclk_next <= '1'; -- Cạnh lên: ADC sẽ chốt dữ liệu ở đây
+                        
+                    when 31 =>
+                        bclk_next <= '0';
+                        -- Chỉ dịch bit và tăng đếm khi kết thúc 1 chu kỳ BCLK
+                        shift_reg_next <= shift_reg(DATA_WIDTH-1 downto 0) & '0';
+                        
+                        if bit_count_reg = (FRAME_WIDTH - 1) then
+                            state_next <= IDLE;
+                        else
+                            bit_count_next <= bit_count_reg + 1;
+                        end if;
+                    when others =>
+                        null;
+                end case;
+        end case;
+    end process;
+
+    sdata <= sdata_reg;
+    --bclk_o <= bclk_reg;
+
+end Behavioral;
