@@ -32,7 +32,7 @@ use IEEE.NUMERIC_STD.ALL;
 --library UNISIM;
 --use UNISIM.VComponents.all;
 
-entity read_data_adc is
+entity write_data_dac is
 
   Generic(
         DATA_WIDTH             : integer    := 24;
@@ -49,14 +49,14 @@ entity read_data_adc is
         --bclk_o  : out std_logic; -- Thêm dòng này ?? quan sát
         
         -- Output
-        Sdata  :   out std_logic
+        sdata  :   out std_logic
         
          );
-end read_data_adc;
+end write_data_dac;
 
 
 
-architecture Behavioral of read_data_adc is
+architecture Behavioral of write_data_dac is
     type state_type is (IDLE, WRITE);
     signal state_reg, state_next : state_type;
     
@@ -67,13 +67,13 @@ architecture Behavioral of read_data_adc is
     signal shift_reg, shift_reg_next       : std_logic_vector(DATA_WIDTH downto 0);
     signal sdata_reg, sdata_next           : std_logic;
     
-    -- Tín hiệu để bắt cạnh lrclk
+    -- Tín hi?u ?? b?t c?nh lrclk
     signal lrclk_delay : std_logic;
     signal lrclk_edge  : std_logic;
 
 begin
 
-    -- Chốt cạnh xuống lrclk
+    -- Ch?t c?nh xu?ng lrclk
     process(clk)
     begin
         if rising_edge(clk) then
@@ -82,7 +82,7 @@ begin
     end process;
     lrclk_edge <= '1' when (lrclk_delay = '1' and lrclk = '0') else '0';
 
-    -- Process đồng bộ
+    -- Process ??ng b?
     process(clk, reset)
     begin
         if (reset = '0') then
@@ -102,10 +102,10 @@ begin
         end if;
     end process;
 
-    -- Process tổ hợp
+    -- Process t? h?p
     process(state_reg, lrclk_edge, bit_count_reg, bclk_count_reg, shift_reg, sdata_reg, bclk_reg, data_in)
     begin
-        -- Giá trị mặc định
+        -- Giá tr? m?c ??nh
         state_next <= state_reg;
         bit_count_next <= bit_count_reg;
         bclk_count_next <= bclk_count_reg;
@@ -117,29 +117,29 @@ begin
             when IDLE =>
                 bit_count_next <= (others => '0');
                 bclk_count_next <= (others => '0');
-                bclk_next <= '1'; -- I2S Idle thường để BCLK cao hoặc thấp tùy chip
+                bclk_next <= '1'; -- I2S Idle th??ng ?? BCLK cao ho?c th?p tùy chip
                 
-                -- Chỉ bắt đầu khi có CẠNH XUỐNG của lrclk
+                -- Ch? b?t ??u khi có C?NH XU?NG c?a lrclk
                 if lrclk_edge = '1' then
-                    shift_reg_next <= '0' & data_in; -- Nạp 25 bit
+                    shift_reg_next <= '0' & data_in; -- N?p 25 bit
                     state_next <= WRITE;
                 end if;
 
             when WRITE =>
-                bclk_count_next <= bclk_count_reg + 1; -- Đếm từ 0-31 (cho 98.304MHz)
+                bclk_count_next <= bclk_count_reg + 1; -- ??m t? 0-31 (cho 98.304MHz)
 
                 case to_integer(bclk_count_reg) is
                     when 0 =>
                         bclk_next <= '0';
-                        -- Đẩy bit hiện tại ra chân Sdata ngay khi BCLK xuống
+                        -- ??y bit hi?n t?i ra chân Sdata ngay khi BCLK xu?ng
                         sdata_next <= shift_reg(DATA_WIDTH); 
                         
                     when 16 =>
-                        bclk_next <= '1'; -- Cạnh lên: ADC sẽ chốt dữ liệu ở đây
+                        bclk_next <= '1'; -- C?nh lên: ADC s? ch?t d? li?u ? ?ây
                         
                     when 31 =>
                         bclk_next <= '0';
-                        -- Chỉ dịch bit và tăng đếm khi kết thúc 1 chu kỳ BCLK
+                        -- Ch? d?ch bit và t?ng ??m khi k?t thúc 1 chu k? BCLK
                         shift_reg_next <= shift_reg(DATA_WIDTH-1 downto 0) & '0';
                         
                         if bit_count_reg = (FRAME_WIDTH - 1) then
